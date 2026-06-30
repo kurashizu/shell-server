@@ -12,6 +12,12 @@ class ExecRequest(BaseModel):
         ..., description="Command to execute (e.g. ``ls``, ``python``)"
     )
     args: list[str] = Field(default=[], description="Arguments passed to the command")
+    shell: bool = Field(
+        default=False,
+        description="Execute via ``bash -c`` so pipes (``|``), redirects (``>``), "
+        "and other shell syntax work. When ``true``, ``command`` and ``args`` "
+        "are joined with spaces and passed to the shell.",
+    )
     timeout_secs: int | None = Field(
         default=None,
         description="Timeout in seconds (defaults to server default, capped at server max)",
@@ -31,6 +37,10 @@ class ExecStreamRequest(BaseModel):
         ..., description="Command to execute (e.g. ``ls``, ``python``)"
     )
     args: list[str] = Field(default=[], description="Arguments passed to the command")
+    shell: bool = Field(
+        default=False,
+        description="Execute via ``bash -c`` so pipes and redirects work.",
+    )
     timeout_secs: int | None = Field(
         default=None,
         description="Timeout in seconds",

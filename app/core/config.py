@@ -38,6 +38,7 @@ class Settings(BaseSettings):
     # Server
     host: str = "127.0.0.1"
     port: int = 8080
+    domain: str = ""  # e.g. "https://shell-server.example.com"
 
     # Workspace
     workspace_path: str = "/tmp/shell-server-workspace"

@@ -34,10 +34,10 @@ class Executor:
         timeout_secs: int | None,
         env: dict[str, str] | None,
         cwd: Path,
+        shell: bool = False,
     ) -> dict:
         """Run a command and return its result as a dict."""
         timeout = min(timeout_secs or self.default_timeout, self.max_timeout)
-        validate_command(command, args, self.allowed_commands)
 
         cmd_env = os.environ.copy()
         if env:
@@ -45,17 +45,36 @@ class Executor:
 
         start = time.monotonic()
 
-        try:
-            process = await asyncio.create_subprocess_exec(
-                command,
-                *args,
-                stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.PIPE,
-                cwd=str(cwd),
-                env=cmd_env,
-            )
-        except FileNotFoundError:
-            return _result(exit_code=-1, error=f"Command not found: {command}")
+        if shell:
+            shell_cmd = " ".join([command] + args)
+            validate_command(_first_token(shell_cmd), [], self.allowed_commands)
+            try:
+                process = await asyncio.create_subprocess_exec(
+                    "bash",
+                    "-c",
+                    shell_cmd,
+                    stdout=asyncio.subprocess.PIPE,
+                    stderr=asyncio.subprocess.PIPE,
+                    cwd=str(cwd),
+                    env=cmd_env,
+                )
+            except FileNotFoundError:
+                return _result(
+                    exit_code=-1, error="bash not found (shell mode requires bash)"
+                )
+        else:
+            validate_command(command, args, self.allowed_commands)
+            try:
+                process = await asyncio.create_subprocess_exec(
+                    command,
+                    *args,
+                    stdout=asyncio.subprocess.PIPE,
+                    stderr=asyncio.subprocess.PIPE,
+                    cwd=str(cwd),
+                    env=cmd_env,
+                )
+            except FileNotFoundError:
+                return _result(exit_code=-1, error=f"Command not found: {command}")
 
         try:
             stdout, stderr = await asyncio.wait_for(
@@ -101,30 +120,51 @@ class Executor:
         timeout_secs: int | None,
         env: dict[str, str] | None,
         cwd: Path,
+        shell: bool = False,
     ):
         """Run a command and yield ``{"stream": …, "text": …}`` dicts.
 
         The final event carries ``"stream": "exit"`` with exit_code / duration.
         """
         timeout = min(timeout_secs or self.default_timeout, self.max_timeout)
-        validate_command(command, args, self.allowed_commands)
 
         cmd_env = os.environ.copy()
         if env:
             cmd_env.update(env)
 
-        try:
-            process = await asyncio.create_subprocess_exec(
-                command,
-                *args,
-                stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.PIPE,
-                cwd=str(cwd),
-                env=cmd_env,
-            )
-        except FileNotFoundError:
-            yield {"stream": "error", "text": f"Command not found: {command}"}
-            return
+        if shell:
+            shell_cmd = " ".join([command] + args)
+            validate_command(_first_token(shell_cmd), [], self.allowed_commands)
+            try:
+                process = await asyncio.create_subprocess_exec(
+                    "bash",
+                    "-c",
+                    shell_cmd,
+                    stdout=asyncio.subprocess.PIPE,
+                    stderr=asyncio.subprocess.PIPE,
+                    cwd=str(cwd),
+                    env=cmd_env,
+                )
+            except FileNotFoundError:
+                yield {
+                    "stream": "error",
+                    "text": "bash not found (shell mode requires bash)",
+                }
+                return
+        else:
+            validate_command(command, args, self.allowed_commands)
+            try:
+                process = await asyncio.create_subprocess_exec(
+                    command,
+                    *args,
+                    stdout=asyncio.subprocess.PIPE,
+                    stderr=asyncio.subprocess.PIPE,
+                    cwd=str(cwd),
+                    env=cmd_env,
+                )
+            except FileNotFoundError:
+                yield {"stream": "error", "text": f"Command not found: {command}"}
+                return
 
         # -- concurrent readers for stdout / stderr --------------------
         queue: asyncio.Queue[tuple[str | None, str]] = asyncio.Queue()
@@ -183,6 +223,11 @@ class Executor:
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
+
+def _first_token(cmd: str) -> str:
+    """Return the first whitespace-delimited token of a shell command string."""
+    return cmd.strip().split()[0] if cmd.strip() else cmd
 
 
 def _result(

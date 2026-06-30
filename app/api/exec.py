@@ -29,6 +29,7 @@ async def exec_command(req: ExecRequest, request: Request):
             timeout_secs=req.timeout_secs,
             env=req.env or None,
             cwd=workspace.root,
+            shell=req.shell,
         )
     except SecurityError as e:
         raise HTTPException(status_code=403, detail=str(e))
@@ -54,6 +55,7 @@ async def exec_stream(req: ExecStreamRequest, request: Request):
                 timeout_secs=req.timeout_secs,
                 env=req.env or None,
                 cwd=workspace.root,
+                shell=req.shell,
             ):
                 yield f"data: {json.dumps(event, ensure_ascii=False)}\n\n"
         except SecurityError as e:

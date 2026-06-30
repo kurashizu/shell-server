@@ -15,6 +15,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     if settings is None:
         settings = Settings()
 
+    servers = [{"url": settings.domain}] if settings.domain else None
+
     app = FastAPI(
         title="Shell Server",
         description="A RESTful API for executing shell commands in a sandboxed "
@@ -24,6 +26,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         version="1.0.0",
         docs_url="/docs",
         redoc_url="/redoc",
+        servers=servers,
     )
 
     # -- store settings on app state for easy access -------------------
