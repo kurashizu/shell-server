@@ -6,6 +6,7 @@ from fastapi import FastAPI
 from fastapi.responses import RedirectResponse
 
 from app.api.router import api_router
+from app.core.auth import auth_middleware
 from app.core.config import Settings
 from app.core.executor import Executor
 from app.core.workspace import WorkspaceManager
@@ -43,6 +44,10 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     app.state.workspace = workspace
     app.state.executor = executor
+
+    # -- auth middleware -------------------------------------------------
+    if settings.auth_token:
+        app.middleware("http")(auth_middleware(settings.auth_token))
 
     # -- lifespan ------------------------------------------------------
     @app.on_event("startup")
