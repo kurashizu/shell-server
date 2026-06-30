@@ -3,6 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from fastapi import FastAPI
+from fastapi.openapi.utils import get_openapi
 from fastapi.responses import RedirectResponse
 
 from app.api.router import api_router
@@ -32,6 +33,10 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     # -- store settings on app state for easy access -------------------
     app.state.settings = settings
+
+    # -- OpenAPI security scheme ----------------------------------------
+    if settings.auth_token:
+        _add_bearer_security(app)
 
     # -- workspace & executor ------------------------------------------
     workspace = WorkspaceManager(Path(settings.workspace_path))
@@ -63,6 +68,37 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         return RedirectResponse(url="/docs")
 
     return app
+
+
+def _add_bearer_security(app: FastAPI) -> None:
+    """Inject Bearer token security scheme into the OpenAPI schema."""
+    original_openapi = app.openapi
+
+    def patched_openapi():
+        if app.openapi_schema:
+            return app.openapi_schema
+        schema = get_openapi(
+            title=app.title,
+            version=app.version,
+            openapi_version=app.openapi_version,
+            description=app.description,
+            routes=app.routes,
+            servers=app.servers,
+        )
+        schema.setdefault("components", {}).setdefault("securitySchemes", {})
+        schema["components"]["securitySchemes"]["BearerAuth"] = {
+            "type": "http",
+            "scheme": "bearer",
+            "bearerFormat": "API token",
+            "description": "Enter your API token. Requests without a valid "
+            "token return 401/403.",
+        }
+        schema.setdefault("security", [])
+        schema["security"].append({"BearerAuth": []})
+        app.openapi_schema = schema
+        return app.openapi_schema
+
+    app.openapi = patched_openapi
 
 
 # ---------------------------------------------------------------------------
