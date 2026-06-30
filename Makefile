@@ -2,7 +2,7 @@
 
 VENV ?= .venv
 PYTHON ?= python
-UVICORN = $(VENV)/bin/uvicorn
+RUNNER = $(VENV)/bin/python run.py
 
 # Install dependencies into a virtual environment
 install:
@@ -10,13 +10,13 @@ install:
 	$(VENV)/bin/pip install --upgrade pip
 	$(VENV)/bin/pip install -r requirements.txt
 
-# Run in production mode (no auto-reload)
+# Run in production mode (reads host/port from .env or env vars)
 run:
-	$(UVICORN) app.main:app --host 127.0.0.1 --port 8080
+	$(RUNNER)
 
 # Run in development mode (auto-reload on file changes)
 dev:
-	$(UVICORN) app.main:app --host 127.0.0.1 --port 8080 --reload
+	$(RUNNER) --reload
 
 # Clean Python cache artifacts
 clean:
