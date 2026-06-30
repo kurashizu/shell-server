@@ -1,117 +1,97 @@
 # Shell Server
 
-A RESTful API for executing shell commands in a sandboxed workspace.
+A RESTful API for executing shell commands in a sandboxed workspace,
+with command whitelisting, timeout control, output truncation, and
+optional Bearer token authentication.
 
 ## Quick Start
 
 ```bash
-# Install
-pip install -r requirements.txt
+git clone https://github.com/kurashizu/shell-server.git
+cd shell-server
 
-# Run (development, auto-reload)
-make dev
+make install           # create .venv + install dependencies
+make dev               # start with auto-reload (development)
 
-# Or run (production)
+# or for production:
+# make run
+```
+
+Open **http://127.0.0.1:8080/docs** for the interactive Swagger UI
+— all API endpoints, request/response schemas, and authentication are
+documented there.
+
+## Deployment
+
+```bash
+# 1. Clone and install
+git clone https://github.com/kurashizu/shell-server.git
+cd shell-server
+make install
+
+# 2. Configure (optional)
+cp .env.example .env
+# edit .env as needed
+
+# 3. Start (production)
 make run
 ```
 
-Open **http://127.0.0.1:8080/docs** for the interactive Swagger UI (auto-generated).
+### Configuration
 
-> If authentication is enabled (`SHELL_SERVER_AUTH_TOKEN` is set), click the
-> **Authorize** button on the Swagger page and enter your token once; all
-> subsequent "Try it out" requests will include it automatically.
-
-## API Overview
-
-| Method | Path | Description |
-|--------|------|-------------|
-| `POST` | `/api/exec` | Execute a command, return full result |
-| `POST` | `/api/exec/stream` | Execute a command, stream output via SSE |
-| `GET` | `/api/workspace/files` | List workspace files |
-| `GET` | `/api/workspace/files/{path}` | Read a file |
-| `POST` | `/api/workspace/files/{path}` | Write a file |
-| `DELETE` | `/api/workspace/files/{path}` | Delete a file |
-| `POST` | `/api/workspace/reset` | Clear the workspace |
-
-## Examples
-
-> If authentication is enabled, add `-H "Authorization: Bearer <token>"`
-> to every curl command below.
-
-```bash
-# Execute a command
-curl -s http://127.0.0.1:8080/api/exec \
-  -H "Content-Type: application/json" \
-  -d '{"command": "echo", "args": ["hello world"]}' | jq .
-
-# Write then read a file
-curl -s -X POST http://127.0.0.1:8080/api/workspace/files/hello.txt \
-  -d "Hello from shell-server"
-
-curl -s http://127.0.0.1:8080/api/workspace/files/hello.txt
-
-# Stream a long-running command
-curl -s -N http://127.0.0.1:8080/api/exec/stream \
-  -H "Content-Type: application/json" \
-  -d '{"command": "ping", "args": ["-c", "3", "127.0.0.1"]}'
-```
-
-## Configuration
-
-Set via environment variables with the `SHELL_SERVER_` prefix:
+All settings are controlled via environment variables with the
+`SHELL_SERVER_` prefix, or by editing `.env`:
 
 | Variable | Default | Description |
-|----------|---------|-------------|
+|---|---|---|
 | `SHELL_SERVER_HOST` | `127.0.0.1` | Bind address |
 | `SHELL_SERVER_PORT` | `8080` | Port |
 | `SHELL_SERVER_WORKSPACE_PATH` | `/tmp/shell-server-workspace` | Workspace directory |
 | `SHELL_SERVER_DEFAULT_TIMEOUT` | `30` | Default command timeout (s) |
-| `SHELL_SERVER_MAX_TIMEOUT` | `300` | Max allowed timeout (s) |
-| `SHELL_SERVER_MAX_OUTPUT_SIZE` | `1048576` | Max output size per stream (bytes) |
-| `SHELL_SERVER_ALLOWED_COMMANDS` | `""` | Comma-separated whitelist (empty = allow all) |
-| `SHELL_SERVER_AUTH_TOKEN` | `""` | Bearer token for auth (empty = no auth). See [Authentication](#authentication) below. |
+| `SHELL_SERVER_MAX_TIMEOUT` | `300` | Maximum allowed timeout (s) |
+| `SHELL_SERVER_MAX_OUTPUT_SIZE` | `1048576` | Max bytes per stdout/stderr stream |
+| `SHELL_SERVER_ALLOWED_COMMANDS` | `""` | Comma-separated or JSON command whitelist |
+| `SHELL_SERVER_AUTH_TOKEN` | `""` | Bearer token (empty = no auth) |
+| `SHELL_SERVER_DOMAIN` | `""` | Public domain for OpenAPI `servers` field |
+
+Example:
+
+```bash
+SHELL_SERVER_PORT=9090 SHELL_SERVER_ALLOWED_COMMANDS=echo,ls,git make run
+```
+
+### Run with Docker (example)
+
+```dockerfile
+FROM python:3.12-slim
+WORKDIR /app
+COPY . .
+RUN pip install -r requirements.txt
+EXPOSE 8080
+CMD ["python", "run.py"]
+```
+
+```bash
+docker build -t shell-server .
+docker run -p 8080:8080 -e SHELL_SERVER_AUTH_TOKEN=secret shell-server
+```
 
 ## Security
 
-- **Workspace jail**: all commands run with `cwd` set to the workspace directory
-- **Path traversal prevention**: workspace file operations validate that resolved paths stay within the workspace
-- **No shell injection**: uses `asyncio.create_subprocess_exec()` with explicit args, not a shell string
-- **Timeouts & output limits**: commands are killed after timeout; output is truncated at the configured limit
-- **Command whitelist**: optional; when set, only listed commands are allowed
+- **Workspace jail** — commands run in an isolated directory; path
+  traversal is blocked
+- **Shell injection prevention** — uses `exec()` with explicit args,
+  not a shell string (unless `shell: true` is requested)
+- **Timeouts & output limits** — commands are killed after timeout;
+  output is truncated at the configured limit
+- **Command whitelist** — optional, restricts which executables are allowed
+- **Auth** — optional Bearer token; documented in Swagger UI
 
-## Authentication
+## API Documentation
 
-Set `SHELL_SERVER_AUTH_TOKEN` to enable Bearer token authentication:
+All API details — endpoints, request/response schemas, authentication,
+and interactive testing — are available at:
 
-```bash
-SHELL_SERVER_AUTH_TOKEN=my-secret-token make dev
-```
-
-Requests without a token are rejected with **401**, and requests with an
-incorrect token are rejected with **403**:
-
-```bash
-# ❌ 401 — no token
-curl -s http://127.0.0.1:8080/api/exec \
-  -H "Content-Type: application/json" \
-  -d '{"command": "echo", "args": ["hi"]}'
-# {"detail":"Missing or malformed Authorization header..."}
-
-# ❌ 403 — wrong token
-curl -s http://127.0.0.1:8080/api/exec \
-  -H "Authorization: Bearer wrong-token" \
-  -H "Content-Type: application/json" \
-  -d '{"command": "echo", "args": ["hi"]}'
-# {"detail":"Invalid token"}
-
-# ✅ 200 — correct token
-curl -s http://127.0.0.1:8080/api/exec \
-  -H "Authorization: Bearer my-secret-token" \
-  -H "Content-Type: application/json" \
-  -d '{"command": "echo", "args": ["hi"]}'
-# {"stdout": "hi\n", "exit_code": 0, ...}
-```
-
-The documentation pages (`/docs`, `/redoc`, `/openapi.json`) are always
-accessible without authentication, and Swagger UI has an **Authorize**
-button so you can enter the token once and try endpoints interactively.
+- **Swagger UI** — `/docs`
+- **ReDoc** — `/redoc`
+- **OpenAPI JSON** — `/openapi.json`
